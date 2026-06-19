@@ -1,0 +1,86 @@
+================================================================================
+          SUPPLY CHAIN FRAMEWORK: ADDING PERIODIC PLANT SHUTDOWNS
+================================================================================
+
+If you want to simulate real-world factory maintenance, equipment cleaning, or 
+catalyst replacements for your PBR (Packed Bed Reactor), you can introduce a 
+Periodic Maintenance Controller. 
+
+This component calculates precisely when the factory must turn off and on based 
+entirely on your high-level targets.
+
+--------------------------------------------------------------------------------
+1. THE MATHEMATICS: HOW IT WORKS UNDER THE HOOD
+--------------------------------------------------------------------------------
+If you want a reactor to run 80% of the time with 4 distinct shutdown periods 
+over a 1-year timeline (8,760 hours), the math breaks down like this:
+
+* Total Uptime Needed = 8,760 hours * 80% = 7,008 hours
+* Total Downtime Needed = 8,760 hours * 20% = 1,752 hours
+* Individual Operational Window = 7,008 hours / 4 runs = 1,752 hours
+* Individual Maintenance Shutdown = 1,752 hours / 4 stops = 438 hours
+
+Instead of calculating these specific numbers manually, the controller runs 
+the calculus automatically upon simulation startup and executes a rhythmic loop:
+   - Run the PBR for 1,752 hours (Status: "Running")
+   - Pause the PBR for 438 hours (Status: "Suspended")
+   - Repeat this exact cycle 4 times.
+
+--------------------------------------------------------------------------------
+2. THE TECHNICAL IMPLEMENTATION (simulation/controllers.py)
+--------------------------------------------------------------------------------
+Add this new block of code straight into your "simulation/controllers.py" file. 
+It uses a clean background SimPy loop to control the reactor's `.is_running` flag.
+
+class PeriodicMaintenanceController:
+    def __init__(self, env, controlled_process, uptime_pct: float, shutdown_count: int, total_hours: float):
+        self.env = env
+        self.process = controlled_process
+        
+        # Calculate individual block lengths based on your inputs
+        total_downtime = total_hours * (1.0 - uptime_pct)
+        total_uptime = total_hours * uptime_pct
+        
+        self.shutdown_duration = total_downtime / max(1, shutdown_count)
+        self.run_duration = total_uptime / max(1, shutdown_count)
+        
+        # Launch the controller loop into the SimPy background queue
+        self.env.process(self._maintenance_loop())
+
+    def _maintenance_loop(self):
+        while True:
+            # Step A: Let the plant run normally
+            self.process.is_running = True
+            yield self.env.timeout(self.run_duration)
+            
+            # Step B: Trigger the scheduled maintenance shutdown window
+            self.process.is_running = False
+            # Force the status text to clearly show it is under maintenance
+            self.process.status = "Suspended" 
+            yield self.env.timeout(self.shutdown_duration)
+
+--------------------------------------------------------------------------------
+3. HOW TO PLUG IT INTO YOUR SCENARIO (isostearic_acid.py)
+--------------------------------------------------------------------------------
+To use this in your plant setup, you only need to add one single line in your 
+main file right where your other controllers are registered:
+
+   # Example: Control 'proc_reactor', target 80% uptime, with 4 shutdowns, over 8760 total hours
+   registry.register_controller(
+       PeriodicMaintenanceController(env, proc_reactor, uptime_pct=0.80, shutdown_count=4, total_hours=8760)
+   )
+
+--------------------------------------------------------------------------------
+4. WHAT HAPPENS ON SCREEN & IN DATA LOGS
+--------------------------------------------------------------------------------
+* Graphical UI Window: While running, the PBR connector pipe will glow Green. 
+  The moment a maintenance window hits, the line instantly turns Grey, and the 
+  status text updates to "Suspended". Downstream tanks will gradually drain, and 
+  subsequent processes will automatically switch to "Starved" until the PBR boots 
+  back up.
+  
+* Telemetry Logs (CSV): Your exported data sheet will perfectly capture the 
+  inventory ripples caused by these shutdowns, allowing your business analysts to 
+  determine if your intermediate storage buffer tank capacities are large enough 
+  to survive plant maintenance outages without stopping downstream deliveries!
+================================================================================

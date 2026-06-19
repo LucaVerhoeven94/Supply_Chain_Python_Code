@@ -1,0 +1,121 @@
+================================================================================
+          SUPPLY CHAIN FRAMEWORK: BEGINNER-FRIENDLY CODE MECHANICS
+================================================================================
+
+If you want to build more features onto this simulation in the future, this 
+guide breaks down exactly how the engine works under the hood using simple, 
+real-world analogies instead of heavy programming jargon.
+
+--------------------------------------------------------------------------------
+1. THE SIMULATION CLOCK: HOW TIME MOVES (SimPy)
+--------------------------------------------------------------------------------
+In a standard video game, time moves smoothly frame-by-frame. If nothing is 
+happening, the computer still has to run calculations 60 times a second.
+
+This framework uses a special library called SimPy, which runs on "Event Time." 
+Think of it like reading a calendar instead of watching a clock:
+* If a truck takes 3 hours to travel from Germany to Belgium, SimPy doesn't 
+  count down every second (1 hour left, 2 hours left...).
+* Instead, it writes "Truck arrives at Hour 3" on its calendar, skips the 
+  boring waiting time instantly, and jumps straight to Hour 3 to unload.
+* This makes the simulation incredibly fast, allowing it to calculate an 
+  entire year of factory operations in a fraction of a second.
+
+--------------------------------------------------------------------------------
+2. HOW MATERIAL FLOWS: SOURCE TO DESTINATION (processes.py)
+--------------------------------------------------------------------------------
+Every machine or chemical reactor in the project operates on a simple 
+"Give-and-Take" loop. Inside the code, a process does three things in order:
+
+   1. Check: Is there enough raw liquid in my feeding tank? 
+      And is there enough empty space in my delivery tank?
+   2. Wait: If a tank is full or empty, the process hits the "Pause" button, 
+      changes its status text to "Blocked" or "Starved", and falls asleep.
+   3. Transfer: If everything is clear, it automatically subtracts material 
+      from the starting tank and adds the completed product to the next tank.
+
+Because SimPy handles this automatically, you don't need a massive, confusing 
+web of "if/else" rules to manage dependencies. If Tank A runs dry, Process B 
+just falls asleep until an upstream supplier wakes it up by pouring fluid into 
+Tank A.
+
+--------------------------------------------------------------------------------
+3. THE PARALLEL LOGISTICS FLEET (logistics.py)
+--------------------------------------------------------------------------------
+When a process finishes, it moves material along a line. But over-the-road truck 
+freight works differently. If one truck departs on a 3-hour journey, the plant 
+doesn't freeze operations waiting for it to arrive; other trucks can load up 
+and depart right behind it.
+
+To simulate this, the TransportLink uses a concept called "Task Spawning":
+* When a storage tank reaches its shipping target percentage, the logistics 
+  link clones an independent "mini-program" representing that specific truck.
+* That individual truck travels completely in the background on its own clock.
+* Meanwhile, the main logistics link goes right back to monitoring the tank, 
+  ready to spawn a second or third truck immediately if more material pools.
+* This allows multiple yellow truck badges to appear on your map at the exact 
+  same time, traveling independently.
+
+--------------------------------------------------------------------------------
+4. THE GEOMETRIC GRID PLACEMENT ENGINE (layout_engine.py)
+--------------------------------------------------------------------------------
+In your original version, every shape required an absolute pixel coordinate on your
+monitor (e.g., X=200, Y=350). If you added a new tank, you had to get out a ruler 
+and manually adjust every single pixel number by hand to make it look right.
+
+The new layout engine acts like an automated blueprint grid designer:
+* It looks at the Registry and asks: "How many unique geographical country sites 
+  did the user create?" If it finds 2 sites (Germany, Belgium), it automatically 
+  divides the screen into 2 large visual regions.
+* Next, it looks at the "stage" number you gave your tank. If a site has a column 
+  max width, it automatically spaces them out mathematically.
+* Finally, it reads your "tier" number (0 for top row, 1 for bottom row) and 
+  assigns the physical box position.
+* This completely eliminates hardcoding. The math scales and squishes elements 
+  perfectly so they always look organized without overlapping.
+
+--------------------------------------------------------------------------------
+5. VECTOR CONNECTING PIPES & ARROWS (widgets.py)
+--------------------------------------------------------------------------------
+Because there are no hardcoded coordinate numbers anywhere, the pipelines don't 
+actually know where they are drawn ahead of time. They discover their endpoints 
+dynamically using simple geometry.
+
+Connecting the Pipes:
+* The pipe engine looks up the source tank box and destination tank box.
+* It grabs the center point coordinates of both boxes, applies a small 5-pixel 
+  "padding" gap so it doesn't cross inside the card walls, and draws a line 
+  directly between them.
+* If you move a tank card to a different site, its connecting pipe stretches 
+  and snaps to follow it automatically!
+
+Drawing the Arrows:
+* To draw the arrowhead triangles pointing in the right direction, the code uses 
+  a math formula called "atan2" (arctangent).
+* This formula looks at the start point and end point of the pipe line, detects 
+  if it is moving forward, backward, or downwards, and calculates the exact 
+  slope angle of the line.
+* It then uses that angle to rotate a small triangle polygon so that it points 
+  perfectly down the direction of the fluid flow, changing colors to reflect 
+  if the pipe is active (Green), idle (Grey), or clogged (Red).
+
+--------------------------------------------------------------------------------
+6. GOLDEN RULES FOR FUTURE UPGRADES
+--------------------------------------------------------------------------------
+If you or anyone else wants to add features to this framework later, keep these 
+three rules in mind:
+
+   Rule 1: Keep Calculations Separate from Graphics
+   Never put a graphics command (like "draw shape") inside the "simulation" folder. 
+   Keep your math, logic, and SimPy timers pure.
+
+   Rule 2: Control Machines Using True/False Flags
+   If you build a new automation controller, have it control processes by 
+   simply turning a flag on or off (e.g., "process.is_running = True"). 
+   The graphics engine will notice this change and update the UI colors on its own.
+
+   Rule 3: Keep Widgets Simple
+   Widgets should be completely blind to how the plant works. They should just 
+   accept plain text labels, tank fill percentages, and pixel dimensions, draw 
+   the shape on screen, and finish instantly.
+================================================================================

@@ -1,0 +1,124 @@
+Plaintext
+================================================================================
+          SUPPLY CHAIN FRAMEWORK: MODULAR ENGINE DEVELOPER DOCUMENTATION
+================================================================================
+
+This document explains the file structure, how to execute the framework, and 
+how any user or developer can modify data, adjust simulation properties, or 
+add new components directly within the scenario configuration script 
+(isostearic_acid.py) without altering the underlying visualization code.
+
+--------------------------------------------------------------------------------
+1. TARGET PROJECT DIRECTORY STRUCTURE
+--------------------------------------------------------------------------------
+
+Your root directory folder (e.g., Oleon/) must be structured exactly as follows:
+
+Oleon/                               <--- ALWAYS RUN COMMANDS FROM THIS ROOT
+│
+├── simulation/
+│   ├── __init__.py                  <--- Empty file (identifies package)
+│   ├── assets.py                    <--- Storage tank classes
+│   ├── registry.py                  <--- Central registry system
+│   ├── processes.py                 <--- Production/Batch processes
+│   ├── logistics.py                 <--- Truck logistics & supplier hooks
+│   ├── controllers.py               <--- Campaign/Plant logic controllers
+│   └── telemetry.py                 <--- Time-series CSV log harvester
+│
+├── visualization/
+│   ├── __init__.py                  <--- Empty file
+│   ├── renderer.py                  <--- Game loop & viewport orchestrator
+│   ├── widgets.py                   <--- Vector shapes, lines, and arrows
+│   └── layout_engine.py             <--- Dynamic column/row placement math
+│
+└── isostearic_acid.py               <--- Main user scenario file
+
+--------------------------------------------------------------------------------
+2. HOW TO RUN THE SIMULATION
+--------------------------------------------------------------------------------
+
+To avoid "ModuleNotFoundError" exceptions, you must execute the script from 
+the main parent directory (Oleon/) using Python's module (-m) execution flag.
+
+1. Open your terminal or PowerShell window.
+2. Navigate to your top-level parent folder:
+   cd C:\Users\Luca\Desktop\Oleon
+
+3. Run this exact command:
+   .venv\Scripts\python.exe -m isostearic_acid
+
+--------------------------------------------------------------------------------
+3. DEVELOPER GUIDE: HOW TO MODIFY DATA VARIABLES
+--------------------------------------------------------------------------------
+
+All modifications can be performed completely inside "isostearic_acid.py". 
+The visualization layout engine reads the parameters from this file dynamically
+and draws the graphics cleanly on launch.
+
+A. Adjusting Tank Capacities & Initial Volumes
+----------------------------------------------
+All storage assets are instances of the StorageTank class. To change their max
+holding capacity or initial starting volumes, change their input parameters:
+
+   # Structure: StorageTank(env, name, capacity_m3, density, init_fill_pct)
+   registry.register_asset('Tank1_CrudeIso', StorageTank(env, 'Crude Product', 180, 0.9, 0.0), site='Germany', display_name='Crude Product')
+
+   * Capacity: Change the 3rd parameter (e.g., from 180 to 500 cubic meters).
+   * Initial Level: Change the 5th parameter (0.0 is empty, 1.0 is full, 0.5 is half-full).
+
+B. Moving or Ordering Cards on the Screen (The Grid Engine)
+-----------------------------------------------------------
+Instead of using messy pixel values (like X=400, Y=250), the UI engine assigns 
+tanks into automatic positions by looking at three simple metadata parameters:
+
+   registry.metadata['Tank1_CrudeIso'].update({"stage": 1, "tier": 0})
+
+   * "site": Change from 'Germany' to 'Belgium' to transfer the tank card 
+     and its pipes into a different geographical site boundary box.
+   * "stage": Sets the left-to-right column index. Set to 0 for the first column,
+     1 for the middle column, or 2 for the rightmost column.
+   * "tier": Sets the top/bottom row index. Set to 0 to align items along the 
+     upper processing stream. Set to 1 to align items on the lower return stream.
+
+C. Modifying Production Rates and Efficiencies
+----------------------------------------------
+Chemical conversion steps are defined by their Flow Rates and Process Yields:
+
+   proc_reactor = ProductionProcess(env, 'Reactor', registry.assets['Tank0_RawProduct'], registry.assets['Tank1_CrudeIso'], flow_rate=0.42, process_yield=0.90)
+
+   * Flow Rate: Change "flow_rate=0.42" to speed up or slow down how many 
+     tons the process attempts to consume from its source tank per hour.
+   * Yield Efficiency: Change "process_yield=0.90". For example, 0.90 means 90%
+     of raw material is turned into product, and 10% is lost as waste.
+
+--------------------------------------------------------------------------------
+4. HOW TO SCALE UP: INSERTING A NEW COMPONENT STEP
+--------------------------------------------------------------------------------
+
+If the facility expands and you need to introduce an entirely new storage tank 
+and an intermediate process unit step, follow these three sequential code 
+additions inside your scenario file:
+
+Step 1: Register and Position the New Asset Card
+   registry.register_asset('Tank4B_WashBuffer', StorageTank(env, 'Washed Buffer', 150, 0.9, 0.0), site='Belgium', display_name='Washed Buffer')
+   registry.metadata['Tank4B_WashBuffer'].update({"stage": 2, "tier": 0})
+
+Step 2: Connect the New Process Connection Pipeline
+   proc_wash_treatment = ProductionProcess(
+       env, 
+       'Wash_Unit', 
+       source_node=registry.assets['Tank4_Hydro_Buffer'], # Pulls from existing
+       dest_node=registry.assets['Tank4B_WashBuffer'],   # Delivers to new
+       flow_rate=4.0, 
+       process_yield=0.98
+   )
+   registry.register_process(proc_wash_treatment)
+
+Step 3: Point Downstream Assets to Continue the Chain
+   # Update the downstream process to pull from your new tank instead of the old one:
+   proc_cold_frac.source = registry.assets['Tank4B_WashBuffer']
+
+When you relaunch your terminal command, the engine dynamically recalculates the 
+positions, creates visual spacing, and connects the updated pipelines with 
+moving directional arrows instantly!
+================================================================================
